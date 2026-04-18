@@ -1456,9 +1456,12 @@ socket.on('chat', (data) => {
         updatePollUI();
     }
 
+    let shouldReadChat = true;
+
     // 🤖 Logika Custom Bot Auto-Responder
     botCmds.forEach(cmd => {
         if (data.comment.trim().toLowerCase() === cmd.key.toLowerCase()) {
+            shouldReadChat = false; // Jangan baca command-nya kalau bot mau jawabb
             setTimeout(() => {
                 createChatBubble({ nickname: '🤖 Bot', comment: cmd.val }, true);
                 speakTextNative(`Jawaban Bot: ${cmd.val}`);
@@ -1471,10 +1474,11 @@ socket.on('chat', (data) => {
         const query = data.comment.split(' ').slice(1).join(' ');
         if (query) {
             addSongToQueue(data.nickname, query);
+            shouldReadChat = false; 
         }
     }
 
-    createChatBubble(data, false);
+    createChatBubble(data, false, !shouldReadChat);
 
     // 🏁 Logika Pemenang Game Ketik
     if (currentGameWord && data.comment.trim().toUpperCase() === currentGameWord) {
@@ -1501,6 +1505,15 @@ socket.on('chat', (data) => {
     }
 });
 socket.on('like', (data) => createChatBubble({ nickname: data.nickname, comment: `Telah mengirimkan ${data.likeCount} Likes!` }, true));
+
+socket.on('member', (data) => {
+    createChatBubble({ nickname: data.nickname, comment: `Bergabung ke dalam Live Stream!` }, true);
+    if (ttsJoinEnabled) {
+        speakTextNative(`${data.nickname} bergabung di live`);
+    }
+    showWelcome(data);
+});
+
 socket.on('follow', (data) => {
     createChatBubble({ nickname: data.nickname, comment: `Baru saja mem-follow!` }, true);
     if (ttsFollowEnabled) {
@@ -1577,13 +1590,8 @@ socket.on('gift', (data) => {
     }
 });
 
-socket.on('follow', (data) => {
-    createChatBubble({ nickname: data.nickname, comment: `Baru saja mem-follow!` }, true);
-    if (ttsFollowEnabled) {
-        speakTextNative(`Terima kasih kak ${data.nickname} sudah follow`);
-    }
-    showWelcome(data);
-});
+// Duplicate follow removed.
+
 
 // ================= SPOTIFY REAL-TIME UPDATE =================
 
@@ -1756,7 +1764,7 @@ function updatePollUI() {
     }
 }
 
-function createChatBubble(data, isSystemMessage) {
+function createChatBubble(data, isSystemMessage, muteTts = false) {
     if (isSystemMessage && isHideSys) return;
 
     // 🌟 Deteksi jika user ini ada di Top 5 (VIP)
@@ -1785,7 +1793,7 @@ function createChatBubble(data, isSystemMessage) {
     `;
     
     // 🔊 TTS Chat
-    if (ttsChatEnabled && !isSystemMessage) {
+    if (ttsChatEnabled && !isSystemMessage && !muteTts) {
         speakTextNative(`${data.nickname} bilang ${data.comment}`);
     }
     
@@ -2351,14 +2359,8 @@ function initDashboardControls() {
 // Panggil initialization dashboard
 initDashboardControls();
 
-// Listener tambahan untuk sinkronisasi socmed manual
-socket.on('settings-updated', (settings) => {
-    if (settings.refreshSocMed && userFromUrl) {
-        // Sebenarnya ini butuh sinkronisasi dari server atau localStorage yang dishare. 
-        // Karena localStorage tidak dishare antar tab, kita harus lewat b64Settings.
-        // Untuk sekarang, user harus refresh overlay secara manual atau kita masukkan ke b64.
-    }
-});
+// Duplicate settings listener removed.
+
 
 // ================= LIVE EVENT SIMULATOR =================
 
