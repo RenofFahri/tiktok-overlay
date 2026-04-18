@@ -329,21 +329,28 @@ function processTtsQueue() {
         const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=id&client=tw-ob`;
         const audio = new Audio(url);
         
-        audio.onplay = () => { isTalking = true; };
+        // 🛡️ KUNCI: Satu flag untuk mencegah double fallback
+        let errorHandled = false;
+        
         audio.onended = () => {
             isTalking = false;
             ttsQueue.shift();
             setTimeout(processTtsQueue, 200);
         };
-        audio.onerror = () => {
-            console.error("Online TTS Failed, falling back to local...");
+        
+        // onerror dan .catch() keduanya bisa terpanggil saat gagal — pakai flag!
+        const handleFallback = () => {
+            if (errorHandled) return; // Sudah ditangani, abaikan!
+            errorHandled = true;
+            console.warn("[TTS] Online gagal, fallback ke suara lokal.");
+            ttsQueue.shift();
+            isTalking = false;
             playLocalTts(text);
         };
         
-        audio.play().catch(e => {
-            console.warn("Audio Play Error, fallback:", e);
-            playLocalTts(text, true); // true = already locked
-        });
+        audio.onerror = handleFallback;
+        audio.play().catch(handleFallback);
+        
     } else {
         playLocalTts(text, false); 
     }
