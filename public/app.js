@@ -1,5 +1,25 @@
 const socket = io();
 
+// --- NUCLEAR ANTI-ECHO DEDUPLICATOR ---
+const processedEventHashes = new Set();
+function isDuplicateEvent(type, data) {
+    // Generate unique hash based on type + content + timestamp (rounded to 2s)
+    const content = data.comment || data.giftName || data.nickname || "";
+    const timeKey = Math.floor(Date.now() / 2000); // 2 second window
+    const hash = `${type}_${data.uniqueId}_${content}_${timeKey}`;
+    
+    if (processedEventHashes.has(hash)) {
+        console.warn(`[Nuclear] Duplicate ${type} blocked!`);
+        return true;
+    }
+    
+    processedEventHashes.add(hash);
+    // Cleanup hash setelah 5 detik agar memori tidak penuh
+    setTimeout(() => processedEventHashes.delete(hash), 5000);
+    return false;
+}
+
+
 // Element Dasar
 const setupPanel = document.getElementById('setup-panel');
 const dashboardPanel = document.getElementById('dashboard-panel');
@@ -1456,6 +1476,8 @@ function updateLeaderboardUI() {
 // Debug logging dihapus untuk mencegah spinner tab browser
 
 socket.on('chat', (data) => {
+    if (isDuplicateEvent('chat', data)) return;
+    
     // 📊 Logika Polling
     if (pollActive) {
         const txt = data.comment.trim().toLowerCase();
@@ -1515,6 +1537,8 @@ socket.on('chat', (data) => {
 socket.on('like', (data) => createChatBubble({ nickname: data.nickname, comment: `Telah mengirimkan ${data.likeCount} Likes!` }, true));
 
 socket.on('member', (data) => {
+    if (isDuplicateEvent('member', data)) return;
+    
     createChatBubble({ nickname: data.nickname, comment: `Bergabung ke dalam Live Stream!` }, true);
     if (ttsJoinEnabled) {
         speakTextNative(`${data.nickname} bergabung di live`);
@@ -1523,6 +1547,8 @@ socket.on('member', (data) => {
 });
 
 socket.on('follow', (data) => {
+    if (isDuplicateEvent('follow', data)) return;
+    
     createChatBubble({ nickname: data.nickname, comment: `Baru saja mem-follow!` }, true);
     if (ttsFollowEnabled) {
         speakTextNative(`Terima kasih kak ${data.nickname} sudah follow`);
@@ -1533,6 +1559,8 @@ socket.on('follow', (data) => {
 const knownGifts = new Set();
 
 socket.on('gift', (data) => {
+    if (isDuplicateEvent('gift', data)) return;
+    
     const rawGiftName = data.giftName || '';
     
     // Tambahkan otomatis ke dropdown autocomplete jika belum ada

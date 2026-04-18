@@ -351,12 +351,8 @@ const activeStreams = new Map();
  * Kirim data langsung ke tiap socket ID agar lebih handal dibanding Room
  */
 function broadcastToStream(streamUsername, event, data) {
-    const stream = activeStreams.get(streamUsername);
-    if (!stream) return;
-    
-    stream.activeSockets.forEach(socketId => {
-        io.to(socketId).emit(event, data);
-    });
+    if (!streamUsername) return;
+    io.to(streamUsername.toLowerCase().trim()).emit(event, data);
 }
 
 // Monitor State: streamerUsername -> { browser, page, interval }
