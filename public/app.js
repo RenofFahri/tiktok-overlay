@@ -545,6 +545,14 @@ if (userFromUrl) {
 
     socket.emit('set-username', { username: activeRoom, sessionId: currentSessionId, ttTargetIdc: currentIdc });
     updateMilestoneUI();
+
+    // 🔄 Fetch global settings saat overlay pertama load (biar sosmed langsung jalan)
+    fetch('/api/settings')
+        .then(r => r.json())
+        .then(s => {
+            if (s.socMedConfig) startSocMedCycle(s.socMedConfig);
+        })
+        .catch(e => console.warn('[Overlay] Gagal fetch settings:', e));
 } else {
     // Mode Dashboard: Pastikan overlay disembunyikan total
     if (document.getElementById('overlay-container')) {
@@ -2382,9 +2390,27 @@ function initDashboardControls() {
         });
     }
 
-    // Social Media Cycle
+    // Social Media Cycle — pre-fill dari server
     const btnSaveSoc = document.getElementById('btn-save-sosmed');
     if (btnSaveSoc) {
+        // Load nilai lama dari server saat pertama buka dashboard
+        fetch('/api/settings')
+            .then(r => r.json())
+            .then(s => {
+                if (s.socMedConfig) {
+                    const c = s.socMedConfig;
+                    const igEl = document.getElementById('dash-soc-ig');
+                    const ytEl = document.getElementById('dash-soc-yt');
+                    const dcEl = document.getElementById('dash-soc-dc');
+                    const intEl = document.getElementById('dash-soc-interval');
+                    if (igEl) igEl.value = c.ig || '';
+                    if (ytEl) ytEl.value = c.yt || '';
+                    if (dcEl) dcEl.value = c.dc || '';
+                    if (intEl) intEl.value = c.interval || 120;
+                }
+            })
+            .catch(() => {});
+
         btnSaveSoc.addEventListener('click', () => {
             const newConfig = {
                 ig: document.getElementById('dash-soc-ig').value.trim(),
@@ -2394,7 +2420,7 @@ function initDashboardControls() {
             };
             // Save to server for all overlays
             socket.emit('settings-update', { room: activeRoom, settings: { socMedConfig: newConfig } });
-            showToast("Sosmed Berhasil Disimpan & Disinkronkan!", "success");
+            showToast("Sosmed Berhasil Disimpan & Disinkronkan! ✅", "success");
         });
     }
 }
