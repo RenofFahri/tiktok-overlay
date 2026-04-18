@@ -238,11 +238,21 @@ function populateVoiceList() {
 
     // Populate Dropdown if on Dashboard
     if (dashTtsVoice) {
-        const currentVal = dashTtsVoice.value || currentTtsVoiceName || (idnVoice ? idnVoice.name : "");
+        const currentVal = dashTtsVoice.value || currentTtsVoiceName || "[Online] Google Indonesian (Universal)";
         dashTtsVoice.innerHTML = '';
         
+        // Inject Online Universal Voice at the TOP
+        const onlineOpt = document.createElement('option');
+        onlineOpt.value = "[Online] Google Indonesian (Universal)";
+        onlineOpt.innerText = "🌐 [Online] Google Indonesia (Sangat Disarankan)";
+        onlineOpt.style.color = "#00f2fe";
+        onlineOpt.style.fontWeight = "bold";
+        if (onlineOpt.value === currentVal) onlineOpt.selected = true;
+        dashTtsVoice.appendChild(onlineOpt);
+
         // Filter: Hanya tampilkan suara Indonesia atau English (biar gak kepanjangan)
         const filteredVoices = voices.filter(v => v.lang.startsWith('id') || v.lang.startsWith('en'));
+
         
         filteredVoices.forEach(v => {
             const opt = document.createElement('option');
@@ -287,9 +297,34 @@ function processTtsQueue() {
         return;
     }
 
-    const text = ttsQueue.shift();
-    if (!text) return;
+    const text = ttsQueue[0];
+    
+    // --- LOGIKA HYBRID (ONLINE vs LOCAL) ---
+    if (currentTtsVoiceName === "[Online] Google Indonesian (Universal)") {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=id&client=tw-ob`;
+        const audio = new Audio(url);
+        
+        audio.onplay = () => { isTalking = true; };
+        audio.onended = () => {
+            isTalking = false;
+            ttsQueue.shift();
+            setTimeout(processTtsQueue, 200);
+        };
+        audio.onerror = () => {
+            console.error("Online TTS Failed, falling back to local...");
+            playLocalTts(text);
+        };
+        
+        audio.play().catch(e => {
+            console.warn("Audio Play Error, fallback:", e);
+            playLocalTts(text);
+        });
+    } else {
+        playLocalTts(text);
+    }
+}
 
+function playLocalTts(text) {
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'id-ID';
     
@@ -311,10 +346,12 @@ function processTtsQueue() {
     msg.onstart = () => { isTalking = true; };
     msg.onend = () => {
         isTalking = false;
+        ttsQueue.shift(); // Hapus item yang sudah dibaca
         setTimeout(processTtsQueue, 100); 
     };
     msg.onerror = () => {
         isTalking = false;
+        ttsQueue.shift();
         setTimeout(processTtsQueue, 100);
     };
 
