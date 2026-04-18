@@ -553,6 +553,9 @@ if (userFromUrl) {
             if (s.socMedConfig) startSocMedCycle(s.socMedConfig);
         })
         .catch(e => console.warn('[Overlay] Gagal fetch settings:', e));
+    
+    // Tampilkan indikator koneksi biar user tau overlay-nya aktif
+    showConnectionStatus();
 } else {
     // Mode Dashboard: Pastikan overlay disembunyikan total
     if (document.getElementById('overlay-container')) {
@@ -2291,9 +2294,9 @@ function startSocMedCycle(config) {
     }
 
     const platforms = [];
-    if (config.ig) platforms.push({ key: 'Instagram', val: config.ig, icon: '📸', color: '#E1306C' });
-    if (config.yt) platforms.push({ key: 'YouTube', val: config.yt, icon: '🎬', color: '#FF0000' });
-    if (config.dc) platforms.push({ key: 'Discord', val: config.dc, icon: '💬', color: '#5865F2' });
+    if (config.ig) platforms.push({ key: 'Instagram', val: config.ig, icon: '<i class="fa-brands fa-instagram"></i>', color: '#E1306C' });
+    if (config.yt) platforms.push({ key: 'YouTube', val: config.yt, icon: '<i class="fa-brands fa-youtube"></i>', color: '#FF0000' });
+    if (config.dc) platforms.push({ key: 'Discord', val: config.dc, icon: '<i class="fa-brands fa-discord"></i>', color: '#5865F2' });
 
     if (platforms.length === 0) return;
 
@@ -2311,7 +2314,8 @@ function startSocMedCycle(config) {
         platformEl.innerText = p.key;
         platformEl.style.color = p.color;
         handleEl.innerText = p.val;
-        iconEl.innerText = p.icon;
+        iconEl.innerHTML = p.icon; // Gunakan innerHTML untuk FontAwesome
+        iconEl.style.color = p.color;
         bubble.style.borderColor = p.color;
 
         container.style.display = 'block';
@@ -2332,6 +2336,20 @@ function startSocMedCycle(config) {
 
     // Then set interval
     socmedInterval = setInterval(runCycle, (parseInt(config.interval) || 120) * 1000);
+}
+
+function showConnectionStatus() {
+    if (!userFromUrl) return;
+    const statusEl = document.getElementById('overlay-status-indicator');
+    if (!statusEl) return;
+    
+    statusEl.innerHTML = `📡 Overlay Terhubung: <b>@${activeRoom}</b>`;
+    statusEl.style.display = 'block';
+    
+    // Auto hide after 10s (handled by CSS animation but for safety)
+    setTimeout(() => {
+        if (statusEl) statusEl.style.display = 'none';
+    }, 12000);
 }
 
 // 🏁 FAST TYPING GAME
