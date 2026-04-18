@@ -2297,7 +2297,8 @@ function startSocMedCycle(config) {
 
     if (platforms.length === 0) return;
 
-    socmedInterval = setInterval(() => {
+    // Helper function to run one cycle
+    const runCycle = () => {
         const p = platforms[socmedIndex];
         const container = document.getElementById('socmed-container');
         const platformEl = document.getElementById('socmed-platform');
@@ -2318,11 +2319,19 @@ function startSocMedCycle(config) {
 
         setTimeout(() => {
             container.style.animation = 'popUpOut 0.5s ease-in forwards';
-            setTimeout(() => { container.style.display = 'none'; }, 500);
+            setTimeout(() => { 
+                if (container) container.style.display = 'none'; 
+            }, 500);
         }, 6000);
 
         socmedIndex = (socmedIndex + 1) % platforms.length;
-    }, (parseInt(config.interval) || 120) * 1000);
+    };
+
+    // Run first cycle immediately
+    runCycle();
+
+    // Then set interval
+    socmedInterval = setInterval(runCycle, (parseInt(config.interval) || 120) * 1000);
 }
 
 // 🏁 FAST TYPING GAME
@@ -2418,8 +2427,17 @@ function initDashboardControls() {
                 dc: document.getElementById('dash-soc-dc').value.trim(),
                 interval: parseInt(document.getElementById('dash-soc-interval').value) || 120
             };
+
+            // 🎯 FIX: Jika belum connect/skip, ambil target room dari input username
+            let targetRoom = activeRoom;
+            if (!targetRoom || targetRoom === 'null') {
+                targetRoom = (usernameInput.value.trim().toLowerCase().startsWith('@') ? 
+                              usernameInput.value.trim().toLowerCase().substring(1) : 
+                              usernameInput.value.trim().toLowerCase()) || 'offline';
+            }
+
             // Save to server for all overlays
-            socket.emit('settings-update', { room: activeRoom, settings: { socMedConfig: newConfig } });
+            socket.emit('settings-update', { room: targetRoom, settings: { socMedConfig: newConfig } });
             showToast("Sosmed Berhasil Disimpan & Disinkronkan! ✅", "success");
         });
     }

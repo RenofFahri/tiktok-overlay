@@ -560,17 +560,20 @@ io.on('connection', (socket) => {
     });
 
     socket.on('settings-update', (data) => {
-        if (!data.room || !data.settings) return;
+        if (!data.settings) return;
         
         // Simpan ke globalSettings di server (merge changes)
         globalSettings = { ...globalSettings, ...data.settings };
         
-        // Simpan ke file secara async
+        // Simpan ke file secara async agar tidak hilang saat mati lampu/restart
         fs.writeFile(GLOBAL_SETTINGS_FILE, JSON.stringify(globalSettings, null, 4), (err) => {
             if (err) console.error('[Settings] Gagal menyimpan file:', err);
         });
 
-        broadcastToStream(data.room, 'settings-updated', data.settings);
+        // Hanya broadcast ke room jika room-nya ada (untuk sinkronisasi overlay realtime)
+        if (data.room) {
+            broadcastToStream(data.room, 'settings-updated', data.settings);
+        }
     });
 
 
