@@ -366,21 +366,27 @@ function playLocalTts(text, alreadyLocked = false) {
 }
 
 function speakTextNative(text) {
-    // Mute TTS di OBS, biarkan Chrome (Dashboard) yang bicara agar suaranya wanita Google Indonesia yang jernih!
     if (userFromUrl) return; 
     if (!('speechSynthesis' in window)) return;
     
-    // 🛡️ Anti-Echo Duplicate Guard: Abaikan jika text sama persis datang < 1.5 detik
+    // 🛡️ Anti-Echo / Anti-Spam (More Robust)
     const now = Date.now();
-    if (text === lastTtsText && (now - lastTtsTime) < 1500) {
+    const cleanText = text.trim();
+    if (cleanText === lastTtsText.trim() && (now - lastTtsTime) < 3000) {
+        console.warn("[TTS] Duplicate ignored:", cleanText);
         return;
     }
     
-    lastTtsText = text;
+    lastTtsText = cleanText;
     lastTtsTime = now;
 
-    // 📥 Masukkan ke antrean agar suara tidak tumpang tindih (Sequential)
-    ttsQueue.push(text);
+    // 📡 DEBUG: Kirim ke server biar saya bisa intip
+    if (typeof socket !== 'undefined') {
+        socket.emit('client-log', `TTS Triggered: "${cleanText}" (Voice: ${currentTtsVoiceName})`);
+    }
+
+    // Masukkan ke antrean
+    ttsQueue.push(cleanText);
     processTtsQueue();
 }
 
