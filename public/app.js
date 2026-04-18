@@ -297,6 +297,9 @@ function processTtsQueue() {
         return;
     }
 
+    // Set lock segera agar tidak ada pemicu ganda
+    isTalking = true;
+
     const text = ttsQueue[0];
     
     // --- LOGIKA HYBRID (ONLINE vs LOCAL) ---
@@ -317,14 +320,16 @@ function processTtsQueue() {
         
         audio.play().catch(e => {
             console.warn("Audio Play Error, fallback:", e);
-            playLocalTts(text);
+            playLocalTts(text, true); // true = already locked
         });
     } else {
-        playLocalTts(text);
+        playLocalTts(text, false); 
     }
 }
 
-function playLocalTts(text) {
+function playLocalTts(text, alreadyLocked = false) {
+    if (!alreadyLocked) isTalking = true;
+    
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'id-ID';
     
@@ -1317,6 +1322,10 @@ socket.on('settings-updated', (settings) => {
     if (settings.triggerGame && userFromUrl) {
         startTypingGame(settings.gameWord);
     }
+
+    if (settings.socMedConfig && userFromUrl) {
+        startSocMedCycle(settings.socMedConfig);
+    }
 });
 
 // ================= LOGIKA EMOJI RAIN =================
@@ -1492,13 +1501,6 @@ socket.on('chat', (data) => {
     }
 });
 socket.on('like', (data) => createChatBubble({ nickname: data.nickname, comment: `Telah mengirimkan ${data.likeCount} Likes!` }, true));
-socket.on('member', (data) => {
-    createChatBubble({ nickname: data.nickname, comment: `Bergabung ke dalam Live Stream!` }, true);
-    if (ttsJoinEnabled) {
-        speakTextNative(`${data.nickname} bergabung di live`);
-    }
-    showWelcome(data);
-});
 socket.on('follow', (data) => {
     createChatBubble({ nickname: data.nickname, comment: `Baru saja mem-follow!` }, true);
     if (ttsFollowEnabled) {
@@ -1575,9 +1577,11 @@ socket.on('gift', (data) => {
     }
 });
 
-socket.on('member', (data) => {
-    // 🌸 Follow / Subscribe
-    addToSupporterFeed(data, 'BARU SAJA FOLLOW');
+socket.on('follow', (data) => {
+    createChatBubble({ nickname: data.nickname, comment: `Baru saja mem-follow!` }, true);
+    if (ttsFollowEnabled) {
+        speakTextNative(`Terima kasih kak ${data.nickname} sudah follow`);
+    }
     showWelcome(data);
 });
 
@@ -2209,14 +2213,23 @@ function processWelcomeQueue() {
     }, 3000);
 }
 
-// 📱 SOCIAL MEDIA CYCLE
+// 📱 SOCIAL MEDIA CYCLE (Global Settings Driven)
 let socmedInterval;
 let socmedIndex = 0;
-function startSocMedCycle() {
+let currentSocMedConfig = null;
+
+function startSocMedCycle(config) {
     if (!userFromUrl) return;
+    if (!config) return;
     
-    const config = JSON.parse(localStorage.getItem('socmed_config') || '{"ig":"","yt":"","dc":"","interval":120}');
-    if (!config.ig && !config.yt && !config.dc) return;
+    currentSocMedConfig = config;
+    clearInterval(socmedInterval);
+
+    if (!config.ig && !config.yt && !config.dc) {
+        const container = document.getElementById('socmed-container');
+        if (container) container.style.display = 'none';
+        return;
+    }
 
     const platforms = [];
     if (config.ig) platforms.push({ key: 'Instagram', val: config.ig, icon: '📸', color: '#E1306C' });
@@ -2225,7 +2238,7 @@ function startSocMedCycle() {
 
     if (platforms.length === 0) return;
 
-    setInterval(() => {
+    socmedInterval = setInterval(() => {
         const p = platforms[socmedIndex];
         const container = document.getElementById('socmed-container');
         const platformEl = document.getElementById('socmed-platform');
@@ -2250,7 +2263,7 @@ function startSocMedCycle() {
         }, 6000);
 
         socmedIndex = (socmedIndex + 1) % platforms.length;
-    }, config.interval * 1000);
+    }, (parseInt(config.interval) || 120) * 1000);
 }
 
 // 🏁 FAST TYPING GAME
@@ -2282,7 +2295,7 @@ function startTypingGame(word) {
 // 🎮 DASHBOARD BUTTONS WIRING
 function initDashboardControls() {
     if (userFromUrl) {
-        startSocMedCycle();
+        // Initial start if config provided in b64
         return;
     }
 
@@ -2321,13 +2334,6 @@ function initDashboardControls() {
     // Social Media Cycle
     const btnSaveSoc = document.getElementById('btn-save-sosmed');
     if (btnSaveSoc) {
-        // Load existing
-        const config = JSON.parse(localStorage.getItem('socmed_config') || '{"ig":"","yt":"","dc":"","interval":120}');
-        document.getElementById('dash-soc-ig').value = config.ig;
-        document.getElementById('dash-soc-yt').value = config.yt;
-        document.getElementById('dash-soc-dc').value = config.dc;
-        document.getElementById('dash-soc-interval').value = config.interval;
-
         btnSaveSoc.addEventListener('click', () => {
             const newConfig = {
                 ig: document.getElementById('dash-soc-ig').value.trim(),
@@ -2335,10 +2341,9 @@ function initDashboardControls() {
                 dc: document.getElementById('dash-soc-dc').value.trim(),
                 interval: parseInt(document.getElementById('dash-soc-interval').value) || 120
             };
-            localStorage.setItem('socmed_config', JSON.stringify(newConfig));
-            // Trigger update ke overlay via socket (agar overlay tarik config terbaru)
-            socket.emit('settings-update', { room: activeRoom, settings: { refreshSocMed: true } });
-            showToast("Sosmed Berhasil Disimpan!", "success");
+            // Save to server for all overlays
+            socket.emit('settings-update', { room: activeRoom, settings: { socMedConfig: newConfig } });
+            showToast("Sosmed Berhasil Disimpan & Disinkronkan!", "success");
         });
     }
 }
