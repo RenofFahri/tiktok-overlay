@@ -101,6 +101,7 @@ const dashMarqueeText = document.getElementById('dash-marquee-text');
 const dashRainbowEnabled = document.getElementById('dash-rainbow-enabled');
 const dashSession = document.getElementById('dash-session');
 const dashIdc = document.getElementById('dash-idc');
+const dashTtsVoice = document.getElementById('dash-tts-voice');
 const btnTestAlert = document.getElementById('btn-test-alert');
 const obsLinkOutput = document.getElementById('obs-link-output');
 
@@ -150,6 +151,7 @@ let ttsEnabled = false;
 let ttsChatEnabled = false;
 let ttsFollowEnabled = false;
 let ttsJoinEnabled = false;
+let currentTtsVoiceName = "";
 
 // Fitur Baru
 let emojiRainEnabled = true;
@@ -223,12 +225,42 @@ let mediaShareUrl = "";
 
 // Cari suara bahasa Indonesia terbaik (Google/Microsoft)
 let idnVoice = null;
-window.speechSynthesis.onvoiceschanged = () => {
+
+function populateVoiceList() {
+    if (!('speechSynthesis' in window)) return;
     const voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) return;
+
+    // Default voice auto-picker (Indonesian)
     idnVoice = voices.find(v => v.lang === 'id-ID' && v.name.includes('Google')) || 
                voices.find(v => v.lang === 'id-ID' && v.name.includes('Microsoft')) || 
                voices.find(v => v.lang.startsWith('id'));
-};
+
+    // Populate Dropdown if on Dashboard
+    if (dashTtsVoice) {
+        const currentVal = dashTtsVoice.value || currentTtsVoiceName || (idnVoice ? idnVoice.name : "");
+        dashTtsVoice.innerHTML = '';
+        
+        // Filter: Hanya tampilkan suara Indonesia atau English (biar gak kepanjangan)
+        const filteredVoices = voices.filter(v => v.lang.startsWith('id') || v.lang.startsWith('en'));
+        
+        filteredVoices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.name;
+            opt.innerText = `${v.name} (${v.lang})`;
+            opt.style.color = '#000';
+            if (v.name === currentVal) opt.selected = true;
+            dashTtsVoice.appendChild(opt);
+        });
+        
+        // Simpan default ke global variable jika belum ada
+        if (!currentTtsVoiceName && idnVoice) currentTtsVoiceName = idnVoice.name;
+    }
+}
+
+window.speechSynthesis.onvoiceschanged = populateVoiceList;
+// Trigger initial populate if voices are already loaded
+if (window.speechSynthesis.getVoices().length > 0) populateVoiceList();
 
 // --- TTS Anti-Echo System ---
 let ttsQueue = [];
@@ -260,8 +292,20 @@ function processTtsQueue() {
 
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'id-ID';
-    if (idnVoice) msg.voice = idnVoice;
-    msg.rate = 1.1; // Sedikit lebih cepat agar tidak menumpuk
+    
+    // Gunakan suara kustom jika terpilih, jika tidak fallback ke idnVoice
+    const voices = window.speechSynthesis.getVoices();
+    const customVoice = voices.find(v => v.name === currentTtsVoiceName);
+    
+    if (customVoice) {
+        msg.voice = customVoice;
+        msg.lang = customVoice.lang;
+    } else if (idnVoice) {
+        msg.voice = idnVoice;
+    }
+
+    msg.rate = 1.1; 
+
     msg.pitch = 1.0;
 
     msg.onstart = () => { isTalking = true; };
@@ -532,13 +576,15 @@ socket.on('tiktok-disconnected', (msg) => {
 });
 
 // Update Settings Real-time
-const controls = [dashLimit, dashTheme, dashHideSys, dashGoalName, dashGoalTarget, dashGoalGift, dashSfxEnabled, dashTtsEnabled, dashTtsChatEnabled, dashTtsFollowEnabled, dashTtsJoinEnabled, dashSession, dashMarqueeText, dashEmojiRainEnabled, dashEmojiRainCustom, dashMediaGift];
+const controls = [dashLimit, dashTheme, dashHideSys, dashGoalName, dashGoalTarget, dashGoalGift, dashSfxEnabled, dashTtsEnabled, dashTtsChatEnabled, dashTtsFollowEnabled, dashTtsJoinEnabled, dashTtsVoice, dashSession, dashMarqueeText, dashEmojiRainEnabled, dashEmojiRainCustom, dashMediaGift];
 controls.forEach(el => {
     if(!el) return;
     el.addEventListener('input', () => {
         if (el === dashSession) currentSessionId = el.value.trim();
         if (el === dashTheme) applyThemeToDashboard(el.value);
+        if (el === dashTtsVoice) currentTtsVoiceName = el.value;
         if (el === dashEmojiRainEnabled) emojiRainEnabled = el.checked;
+
         if (el === dashEmojiRainCustom) emojiRainCustom = el.value.trim();
         if (el === dashMediaGift) mediaShareGift = el.value;
         sendSettingsToServer();
@@ -863,7 +909,8 @@ function sendSettingsToServer(withToast = false) {
         mediaUrl: mediaShareUrl,
         soundUrl: dashSoundUrl ? dashSoundUrl.value : "",
         spotifyEnabled: spotifyEnabled,
-        spotifyGlow: dashSpotifyGlow ? dashSpotifyGlow.checked : true
+        spotifyGlow: dashSpotifyGlow ? dashSpotifyGlow.checked : true,
+        ttsVoiceName: dashTtsVoice ? dashTtsVoice.value : ""
     };
     socket.emit('settings-update', { room: activeRoom, settings });
     if (withToast) showToast('Pengaturan berhasil disimpan!', 'success');
@@ -1157,6 +1204,10 @@ socket.on('settings-updated', (settings) => {
     if (settings.ttsChat !== undefined) ttsChatEnabled = settings.ttsChat;
     if (settings.ttsFollow !== undefined) ttsFollowEnabled = settings.ttsFollow;
     if (settings.ttsJoin !== undefined) ttsJoinEnabled = settings.ttsJoin;
+    if (settings.ttsVoiceName !== undefined) {
+        currentTtsVoiceName = settings.ttsVoiceName;
+        if (dashTtsVoice) dashTtsVoice.value = currentTtsVoiceName;
+    }
     milestoneGoal.name = settings.goalName;
     milestoneGoal.target = settings.goalTarget;
     if (settings.goalGift !== undefined) milestoneGiftFilter = settings.goalGift || '';
