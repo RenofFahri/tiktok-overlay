@@ -282,9 +282,11 @@ const dashboardTabId = Math.random().toString(36).substring(2, 10);
 // Klaim Speaker Role (Dashboard Only)
 const isDashboardTab = !window.location.search.includes('user=');
 if (isDashboardTab) {
+    // Force claim saat buka/focus
     localStorage.setItem('tts_active_tab', dashboardTabId);
     window.addEventListener('focus', () => {
         localStorage.setItem('tts_active_tab', dashboardTabId);
+        ttsQueue = []; // Bersihkan antrean tab yang baru aktif agar tidak sisa lama
     });
 }
 
@@ -1458,16 +1460,16 @@ socket.on('chat', (data) => {
 
     let shouldReadChat = true;
 
-    // 🤖 Logika Custom Bot Auto-Responder
-    botCmds.forEach(cmd => {
-        if (data.comment.trim().toLowerCase() === cmd.key.toLowerCase()) {
-            shouldReadChat = false; // Jangan baca command-nya kalau bot mau jawabb
-            setTimeout(() => {
-                createChatBubble({ nickname: '🤖 Bot', comment: cmd.val }, true);
-                speakTextNative(`Jawaban Bot: ${cmd.val}`);
-            }, 500); // delay dikit biar responsenya natural
-        }
-    });
+    // 🤖 Logika Custom Bot Auto-Responder (Pake .find biar cuma 1 yang ngerespon)
+    const matchedCmd = botCmds.find(cmd => data.comment.trim().toLowerCase() === cmd.key.toLowerCase());
+    
+    if (matchedCmd) {
+        shouldReadChat = false; 
+        setTimeout(() => {
+            createChatBubble({ nickname: '🤖 Bot', comment: matchedCmd.val }, true);
+            speakTextNative(`Jawaban Bot: ${matchedCmd.val}`);
+        }, 500); 
+    }
 
     // 🎵 Logika Song Request (!lagu)
     if (data.comment.trim().toLowerCase().startsWith('!lagu ') || data.comment.trim().toLowerCase().startsWith('!request ')) {
