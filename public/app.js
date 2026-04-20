@@ -292,82 +292,95 @@ window.speechSynthesis.onvoiceschanged = populateVoiceList;
 // Trigger initial populate if voices are already loaded
 if (window.speechSynthesis.getVoices().length > 0) populateVoiceList();
 
-// --- TTS Anti-Echo System ---
+// ============================================================
+// === TTS ENGINE (BULLETPROOF CHROME EDITION) ================
+// ============================================================
 let ttsQueue = [];
 let isTalking = false;
-let isTalkingStartTime = 0; // 🕐 Untuk watchdog timer
+let isTalkingStartTime = 0;
 let lastTtsText = "";
 let lastTtsTime = 0;
 const dashboardTabId = Math.random().toString(36).substring(2, 10);
-
-// Klaim Speaker Role (Dashboard Only)
 const isDashboardTab = !window.location.search.includes('user=');
+
+// Klaim Speaker Role — Cukup claim sekali, JANGAN hapus queue saat focus
+// karena itu yang bikin TTS mati setiap kali user klik window
 if (isDashboardTab) {
-    // Force claim saat buka/focus
     localStorage.setItem('tts_active_tab', dashboardTabId);
     window.addEventListener('focus', () => {
         localStorage.setItem('tts_active_tab', dashboardTabId);
-        ttsQueue = []; // Bersihkan antrean tab yang baru aktif agar tidak sisa lama
+        // ❌ DIHAPUS: ttsQueue = []; — ini yang bikin TTS mati saat user klik window!
+        // Cukup resume synthesis kalau lagi paused
+        if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
     });
 }
 
-// 🛡️ FIX 1: Chrome speechSynthesis Keepalive
-// Chrome membekukan speechSynthesis setelah ~15 menit. Ini mencegahnya.
-setInterval(() => {
-    if (window.speechSynthesis && !isTalking) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
-    }
-}, 10000); // Setiap 10 detik
-
-// 🛡️ FIX 2: Watchdog Timer — Reset isTalking jika nyangkut terlalu lama
-setInterval(() => {
-    if (isTalking && isTalkingStartTime > 0) {
-        const elapsed = Date.now() - isTalkingStartTime;
-        if (elapsed > 20000) { // Lebih dari 20 detik = pasti nyangkut
-            console.warn('[TTS Watchdog] isTalking nyangkut! Auto-reset dipaksa.');
-            window.speechSynthesis.cancel(); // Paksa berhenti
-            isTalking = false;
-            isTalkingStartTime = 0;
-            ttsQueue.shift(); // Hapus item yang nyangkut
-            setTimeout(processTtsQueue, 300); // Lanjutkan antrian
+// 🔄 FIX: Handle tab visibility change (Chrome freezes TTS saat tab background)
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        // Tab jadi visible lagi — paksa resume synthesis
+        if (window.speechSynthesis) {
+            window.speechSynthesis.resume();
         }
+        // Jika ada antrian tapi tidak jalan, restart
+        if (!isTalking && ttsQueue.length > 0) {
+            setTimeout(processTtsQueue, 200);
+        }
+    }
+});
+
+// 🛡️ Keepalive: Cegah Chrome membekukan speechSynthesis
+// Pakai speaking check agar tidak interrupt suara yang sedang jalan
+setInterval(() => {
+    if (!window.speechSynthesis) return;
+    if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
     }
 }, 5000); // Cek setiap 5 detik
 
+// 🐕 Watchdog: Reset isTalking jika nyangkut lebih dari 10 detik
+setInterval(() => {
+    if (!isTalking || isTalkingStartTime === 0) return;
+    const elapsed = Date.now() - isTalkingStartTime;
+    if (elapsed > 10000) {
+        console.warn('[TTS Watchdog] Nyangkut >10s, paksa reset!');
+        window.speechSynthesis.cancel();
+        isTalking = false;
+        isTalkingStartTime = 0;
+        if (ttsQueue.length > 0) ttsQueue.shift();
+        setTimeout(processTtsQueue, 300);
+    }
+}, 2000);
+
 function processTtsQueue() {
     if (isTalking || ttsQueue.length === 0) return;
-    
-    // Pastikan ini masih tab aktif yang boleh ngomong (Dashboard Multiple Tabs Fix)
+
+    // Multi-tab guard: pastikan ini tab yang punya hak bicara
     if (isDashboardTab && localStorage.getItem('tts_active_tab') !== dashboardTabId) {
-        ttsQueue = []; 
-        return;
+        return; // ❌ Jangan hapus queue! Cukup skip saja
     }
 
-    // Set lock segera agar tidak ada pemicu ganda
     isTalking = true;
-    isTalkingStartTime = Date.now(); // 🕐 Catat waktu mulai untuk watchdog
+    isTalkingStartTime = Date.now();
 
     const text = ttsQueue[0];
-    
-    // --- LOGIKA HYBRID (ONLINE vs LOCAL) ---
+
     if (currentTtsVoiceName === "[Online] Google Indonesian (Universal)") {
         const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=id&client=tw-ob`;
         const audio = new Audio(url);
-        
-        // 🛡️ KUNCI: Satu flag untuk mencegah double fallback
         let errorHandled = false;
-        
+
         audio.onended = () => {
             isTalking = false;
             isTalkingStartTime = 0;
             ttsQueue.shift();
             setTimeout(processTtsQueue, 200);
         };
-        
-        // onerror dan .catch() keduanya bisa terpanggil saat gagal — pakai flag!
+
         const handleFallback = () => {
-            if (errorHandled) return; // Sudah ditangani, abaikan!
+            if (errorHandled) return;
             errorHandled = true;
             console.warn("[TTS] Online gagal, fallback ke suara lokal.");
             ttsQueue.shift();
@@ -375,28 +388,30 @@ function processTtsQueue() {
             isTalkingStartTime = 0;
             playLocalTts(text);
         };
-        
+
         audio.onerror = handleFallback;
         audio.play().catch(handleFallback);
-        
     } else {
-        playLocalTts(text, false); 
+        playLocalTts(text, false);
     }
 }
 
 function playLocalTts(text, alreadyLocked = false) {
     if (!alreadyLocked) {
         isTalking = true;
-        isTalkingStartTime = Date.now(); // 🕐 Catat waktu mulai
+        isTalkingStartTime = Date.now();
     }
-    
+
+    // 🔑 KUNCI: Pastikan synthesis tidak dalam keadaan paused sebelum speak
+    if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+    }
+
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'id-ID';
-    
-    // Gunakan suara kustom jika terpilih, jika tidak fallback ke idnVoice
+
     const voices = window.speechSynthesis.getVoices();
     const customVoice = voices.find(v => v.name === currentTtsVoiceName);
-    
     if (customVoice) {
         msg.voice = customVoice;
         msg.lang = customVoice.lang;
@@ -404,20 +419,19 @@ function playLocalTts(text, alreadyLocked = false) {
         msg.voice = idnVoice;
     }
 
-    msg.rate = 1.1; 
+    msg.rate = 1.1;
     msg.pitch = 1.0;
 
-    msg.onstart = () => { isTalking = true; };
     msg.onend = () => {
         isTalking = false;
-        isTalkingStartTime = 0; // Reset watchdog
+        isTalkingStartTime = 0;
         ttsQueue.shift();
-        setTimeout(processTtsQueue, 100); 
+        setTimeout(processTtsQueue, 100);
     };
     msg.onerror = (e) => {
-        console.warn('[TTS] Error suara lokal:', e.error);
+        console.warn('[TTS] Error:', e.error);
         isTalking = false;
-        isTalkingStartTime = 0; // Reset watchdog
+        isTalkingStartTime = 0;
         ttsQueue.shift();
         setTimeout(processTtsQueue, 100);
     };
@@ -425,28 +439,19 @@ function playLocalTts(text, alreadyLocked = false) {
     window.speechSynthesis.speak(msg);
 }
 
-
 function speakTextNative(text) {
-    if (userFromUrl) return; 
+    if (userFromUrl) return;
     if (!('speechSynthesis' in window)) return;
-    
-    // 🛡️ Anti-Echo / Anti-Spam (More Robust)
+
     const now = Date.now();
     const cleanText = text.trim();
     if (cleanText === lastTtsText.trim() && (now - lastTtsTime) < 3000) {
-        console.warn("[TTS] Duplicate ignored:", cleanText);
-        return;
+        return; // Anti-echo
     }
-    
+
     lastTtsText = cleanText;
     lastTtsTime = now;
 
-    // 📡 DEBUG: Kirim ke server biar saya bisa intip
-    if (typeof socket !== 'undefined') {
-        socket.emit('client-log', `TTS Triggered: "${cleanText}" (Voice: ${currentTtsVoiceName})`);
-    }
-
-    // Masukkan ke antrean
     ttsQueue.push(cleanText);
     processTtsQueue();
 }
