@@ -1652,8 +1652,8 @@ socket.on('gift', (data) => {
     updateLeaderboardUI();
 
     // 3. Sound Effect & TTS
-    // SFX dimainkan di OBS agar stabil
-    if (userFromUrl && sfxEnabled) {
+    // SFX dimainkan di manapun (dashboard atau overlay) selama sfxEnabled
+    if (sfxEnabled) {
         alertSound.currentTime = 0;
         alertSound.play().catch(e => console.warn("Audio blocked:", e));
     }
