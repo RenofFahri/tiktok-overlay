@@ -295,6 +295,7 @@ if (window.speechSynthesis.getVoices().length > 0) populateVoiceList();
 // --- TTS Anti-Echo System ---
 let ttsQueue = [];
 let isTalking = false;
+let isTalkingStartTime = 0; // 🕐 Untuk watchdog timer
 let lastTtsText = "";
 let lastTtsTime = 0;
 const dashboardTabId = Math.random().toString(36).substring(2, 10);
@@ -310,6 +311,30 @@ if (isDashboardTab) {
     });
 }
 
+// 🛡️ FIX 1: Chrome speechSynthesis Keepalive
+// Chrome membekukan speechSynthesis setelah ~15 menit. Ini mencegahnya.
+setInterval(() => {
+    if (window.speechSynthesis && !isTalking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+    }
+}, 10000); // Setiap 10 detik
+
+// 🛡️ FIX 2: Watchdog Timer — Reset isTalking jika nyangkut terlalu lama
+setInterval(() => {
+    if (isTalking && isTalkingStartTime > 0) {
+        const elapsed = Date.now() - isTalkingStartTime;
+        if (elapsed > 20000) { // Lebih dari 20 detik = pasti nyangkut
+            console.warn('[TTS Watchdog] isTalking nyangkut! Auto-reset dipaksa.');
+            window.speechSynthesis.cancel(); // Paksa berhenti
+            isTalking = false;
+            isTalkingStartTime = 0;
+            ttsQueue.shift(); // Hapus item yang nyangkut
+            setTimeout(processTtsQueue, 300); // Lanjutkan antrian
+        }
+    }
+}, 5000); // Cek setiap 5 detik
+
 function processTtsQueue() {
     if (isTalking || ttsQueue.length === 0) return;
     
@@ -321,6 +346,7 @@ function processTtsQueue() {
 
     // Set lock segera agar tidak ada pemicu ganda
     isTalking = true;
+    isTalkingStartTime = Date.now(); // 🕐 Catat waktu mulai untuk watchdog
 
     const text = ttsQueue[0];
     
@@ -334,6 +360,7 @@ function processTtsQueue() {
         
         audio.onended = () => {
             isTalking = false;
+            isTalkingStartTime = 0;
             ttsQueue.shift();
             setTimeout(processTtsQueue, 200);
         };
@@ -345,6 +372,7 @@ function processTtsQueue() {
             console.warn("[TTS] Online gagal, fallback ke suara lokal.");
             ttsQueue.shift();
             isTalking = false;
+            isTalkingStartTime = 0;
             playLocalTts(text);
         };
         
@@ -357,7 +385,10 @@ function processTtsQueue() {
 }
 
 function playLocalTts(text, alreadyLocked = false) {
-    if (!alreadyLocked) isTalking = true;
+    if (!alreadyLocked) {
+        isTalking = true;
+        isTalkingStartTime = Date.now(); // 🕐 Catat waktu mulai
+    }
     
     const msg = new SpeechSynthesisUtterance(text);
     msg.lang = 'id-ID';
@@ -374,23 +405,26 @@ function playLocalTts(text, alreadyLocked = false) {
     }
 
     msg.rate = 1.1; 
-
     msg.pitch = 1.0;
 
     msg.onstart = () => { isTalking = true; };
     msg.onend = () => {
         isTalking = false;
-        ttsQueue.shift(); // Hapus item yang sudah dibaca
+        isTalkingStartTime = 0; // Reset watchdog
+        ttsQueue.shift();
         setTimeout(processTtsQueue, 100); 
     };
-    msg.onerror = () => {
+    msg.onerror = (e) => {
+        console.warn('[TTS] Error suara lokal:', e.error);
         isTalking = false;
+        isTalkingStartTime = 0; // Reset watchdog
         ttsQueue.shift();
         setTimeout(processTtsQueue, 100);
     };
 
     window.speechSynthesis.speak(msg);
 }
+
 
 function speakTextNative(text) {
     if (userFromUrl) return; 
